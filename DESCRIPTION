@@ -1,0 +1,21 @@
+Package: dualplot
+Title: Unified Plotting Primitives for Base Graphics and ggplot2
+Version: 0.1.0
+Authors@R: c(
+    person("Ryoichi", "Asashiba",
+           email = "ryoichi.asashiba@gmail.com",
+           role = c("aut", "cre"),
+           comment = c(ORCID = "0009-0001-9532-7000"))
+  )
+Description:
+  Provides a unified, lightweight set of plotting primitives that render consistent visualizations across both base R 'graphics' and 'ggplot2' backends, with seamless color theme integration via 'colortheme'.
+License: MIT + file LICENSE
+Encoding: UTF-8
+RoxygenNote: 7.3.2
+Imports:
+  colortheme, graphics, grDevices, utils
+Suggests:
+  ggplot2, scales, testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Remotes:
+  ryo-asashi/colortheme
