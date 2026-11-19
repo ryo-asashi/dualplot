@@ -61,7 +61,7 @@ draw_points(
   mtcars$wt, mtcars$mpg,
   theme = "viridis", theme.values = mtcars$hp,
   xlab = "Weight", ylab = "MPG",
-  legend = "topright", legend.title = "Horsepower"
+  legend= "bottom", legend.title = "Horsepower"
 )
 
 if (requireNamespace("ggplot2", quietly = TRUE)) {

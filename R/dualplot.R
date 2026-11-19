@@ -81,7 +81,7 @@ draw_bars <- function(
   )
 }
 
-#' Draw Multi-Line Series and ICE Curves
+#' Draw Multi-Line Series
 #'
 #' @param x vector of x-axis values (numeric, factor, or character).
 #' @param y numeric matrix or vector of y-values (\code{NROW(y) == length(x)}).
@@ -105,7 +105,7 @@ draw_bars <- function(
 #'
 #' draw_lines(
 #'   x, y, points = obs, theme = "Okabe-Ito",
-#'   xlab = "x", ylab = "Value", legend = "topright", legend.title = "Series"
+#'   xlab = "x", ylab = "Value", legend= "bottom", legend.title = "Series"
 #' )
 #'
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
@@ -151,7 +151,7 @@ draw_lines <- function(
 #'   mtcars$wt, mtcars$mpg,
 #'   theme = "viridis", theme.values = mtcars$hp,
 #'   xlab = "Weight", ylab = "MPG",
-#'   legend = "topright", legend.title = "Horsepower"
+#'   legend= "bottom", legend.title = "Horsepower"
 #' )
 #'
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
@@ -377,7 +377,8 @@ dualplot_options <- function(...) {
 #' @seealso \code{\link{par_monograph}}
 #' @examples
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
-#'   draw_bars(c(A = 0.5, B = -0.3), theme = "azurerose", engine = "ggplot2") +
+#'   dat <- stats::setNames(-5:5, LETTERS[1:11])
+#'   draw_bars(dat, theme = "azurerose", engine = "ggplot2") +
 #'     theme_monograph(grid.type = "x")
 #' }
 #' @export
@@ -430,7 +431,8 @@ theme_monograph <- function(
 #' @seealso \code{\link{theme_monograph}}
 #' @examples
 #' old_par <- par_monograph()
-#' draw_bars(c(A = 0.5, B = -0.3), theme = "azurerose", xlab = "Effect")
+#' dat <- stats::setNames(-5:5, LETTERS[1:11])
+#' draw_bars(dat, theme = "azurerose", xlab = "Effect")
 #' graphics::par(old_par)
 #' @export
 #'

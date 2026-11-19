@@ -2,7 +2,7 @@
 % Please edit documentation in R/dualplot.R
 \name{draw_lines}
 \alias{draw_lines}
-\title{Draw Multi-Line Series and ICE Curves}
+\title{Draw Multi-Line Series}
 \usage{
 draw_lines(
   x,
@@ -52,7 +52,7 @@ draw_lines(
 Invisibly returns \code{NULL} for \code{"graphics"}, or a \code{"ggplot"} object for \code{"ggplot2"}.
 }
 \description{
-Draw Multi-Line Series and ICE Curves
+Draw Multi-Line Series
 }
 \examples{
 x <- seq(0, 2 * pi, length.out = 50)
@@ -61,7 +61,7 @@ obs <- data.frame(x = c(1, 3, 5), y = sin(c(1, 3, 5)))
 
 draw_lines(
   x, y, points = obs, theme = "Okabe-Ito",
-  xlab = "x", ylab = "Value", legend = "topright", legend.title = "Series"
+  xlab = "x", ylab = "Value", legend= "bottom", legend.title = "Series"
 )
 
 if (requireNamespace("ggplot2", quietly = TRUE)) {
