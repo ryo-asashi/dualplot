@@ -125,7 +125,7 @@ p1 + p2
 - [`draw_bars()`](https://ryo-asashi.github.io/dualplot/reference/draw_bars.md)
   : Draw Bar, Dot, and Waterfall Charts
 - [`draw_lines()`](https://ryo-asashi.github.io/dualplot/reference/draw_lines.md)
-  : Draw Multi-Line Series and ICE Curves
+  : Draw Multi-Line Series
 - [`draw_points()`](https://ryo-asashi.github.io/dualplot/reference/draw_points.md)
   : Draw Scatter and Jitter Plots
 - [`draw_surface()`](https://ryo-asashi.github.io/dualplot/reference/draw_surface.md)

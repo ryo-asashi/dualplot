@@ -1,6 +1,6 @@
-# Draw Multi-Line Series and ICE Curves
+# Draw Multi-Line Series
 
-Draw Multi-Line Series and ICE Curves
+Draw Multi-Line Series
 
 ## Usage
 
@@ -89,7 +89,7 @@ obs <- data.frame(x = c(1, 3, 5), y = sin(c(1, 3, 5)))
 
 draw_lines(
   x, y, points = obs, theme = "Okabe-Ito",
-  xlab = "x", ylab = "Value", legend = "topright", legend.title = "Series"
+  xlab = "x", ylab = "Value", legend= "bottom", legend.title = "Series"
 )
 
 

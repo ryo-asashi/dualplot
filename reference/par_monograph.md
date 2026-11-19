@@ -31,7 +31,8 @@ graphical parameters.
 
 ``` r
 old_par <- par_monograph()
-draw_bars(c(A = 0.5, B = -0.3), theme = "azurerose", xlab = "Effect")
+dat <- stats::setNames(-5:5, LETTERS[1:11])
+draw_bars(dat, theme = "azurerose", xlab = "Effect")
 
 graphics::par(old_par)
 ```

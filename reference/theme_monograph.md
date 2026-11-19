@@ -57,7 +57,8 @@ A `ggplot2` `theme` object.
 
 ``` r
 if (requireNamespace("ggplot2", quietly = TRUE)) {
-  draw_bars(c(A = 0.5, B = -0.3), theme = "azurerose", engine = "ggplot2") +
+  dat <- stats::setNames(-5:5, LETTERS[1:11])
+  draw_bars(dat, theme = "azurerose", engine = "ggplot2") +
     theme_monograph(grid.type = "x")
 }
 ```
