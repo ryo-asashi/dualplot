@@ -29,3 +29,8 @@ reference:
       - draw_surface
       - draw_matrix
       - draw_boxes
+  - title: "Themes and Options"
+    contents:
+      - par_monograph
+      - theme_monograph
+      - dualplot_options
