@@ -19,3 +19,5 @@ Suggests:
 Config/testthat/edition: 3
 Remotes:
   ryo-asashi/colortheme
+URL: https://github.com/ryo-asashi/dualplot, https://ryo-asashi.github.io/dualplot/
+BugReports: https://github.com/ryo-asashi/dualplot/issues

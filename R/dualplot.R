@@ -1,161 +1,449 @@
 # R/dualplot.R
-# Unified dual-backend plotting API (graphics & ggplot2)
+# Public entry points, options, and monograph visual themes
 
-#' Unified Dual-Backend Plotting Primitives
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+is_discrete <- function(x) {
+  is.factor(x) || is.character(x) || is.logical(x)
+}
+
+check_ggplot2 <- function(call = sys.call(-1L)) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop(
+      "package 'ggplot2' is required for engine = 'ggplot2': ",
+      "please install it or use engine = 'graphics'",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+#' Draw Bar, Dot, and Waterfall Charts
 #'
-#' These functions provide a single consistent interface that dispatches to either
-#' base R \strong{graphics} or \strong{ggplot2} based on the \code{engine} argument (or \code{getOption("dualplot.engine")}).
+#' @param to numeric vector or matrix (\code{nrow} categories by \code{ncol} groups) of end values.
+#' @param from numeric vector or matrix of start values (default \code{0}).
+#' @param ticks character vector of category tick labels (length \code{nrow(to)}).
+#' @param horizontal logical; if \code{TRUE}, bars/dots are drawn horizontally (top-to-bottom).
+#' @param type one of \code{"bar"} or \code{"dot"}.
+#' @param middle numeric midpoint for diverging color themes (default \code{0}).
+#' @param limits optional numeric vector of length 2 for value axis limits.
+#' @param width optional numeric bar/dodge width.
+#' @param vline optional numeric intercept for a reference line.
+#' @param connect logical; if \code{TRUE}, draws step lines connecting bars (for waterfall charts).
+#' @param ... additional graphical parameters.
+#' @param main,sub,xlab,ylab optional plot titles and axis labels.
+#' @param theme optional color theme name or \code{"colortheme"} object.
+#' @param theme.values optional vector or matrix mapped to colors via \code{theme}.
+#' @param legend logical or character legend position (\code{FALSE}, \code{TRUE},
+#'   \code{"topright"}, \code{"topleft"}, \code{"bottomright"}, \code{"bottomleft"},
+#'   \code{"top"}, \code{"bottom"}, \code{"left"}, \code{"right"}).
+#' @param legend.title optional title string for the legend.
+#' @param engine graphics backend: \code{"graphics"} or \code{"ggplot2"}.
 #'
-#' @name dualplot
-#' @param engine character string; either \code{"base"} (default), \code{"graphics"}, \code{"gg"}, or \code{"ggplot2"}.
-#' @inheritParams draw_bars_base
-#'
-#' @return Invisibly returns \code{NULL} when \code{engine = "graphics"}, or a
-#'   \code{ggplot} object when \code{engine = "ggplot2"}.
-#'
+#' @return Invisibly returns \code{NULL} for \code{"graphics"}, or a \code{"ggplot"} object for \code{"ggplot2"}.
 #' @examples
-#' # 1. Horizontal barplot & waterfall chart
-#' vals <- c(2.5, -1.2, 0.8, -0.4)
-#' names(vals) <- c("carat", "clarity", "cut", "color")
+#' vals <- c(Age = 0.42, Income = -0.28, Tenure = 0.65, Region = -0.15)
 #'
-#' draw_bars(vals, theme = "azurerose", xlab = "Contribution", engine = "graphics")
+#' # Horizontal bar chart with diverging color theme
+#' draw_bars(vals, theme = "azurerose", xlab = "Contribution", vline = 0)
+#'
+#' # Dot chart
+#' draw_bars(vals, type = "dot", theme = "azurerose", xlab = "Contribution")
+#'
+#' # Waterfall chart
+#' draw_bars(
+#'   to = c(1.0, 1.4, 1.1, 1.5),
+#'   from = c(0.0, 1.0, 1.4, 1.1),
+#'   ticks = c("Intercept", "Age", "Income", "Total"),
+#'   connect = TRUE, vline = 0, theme = "azurerose"
+#' )
+#'
 #' if (requireNamespace("ggplot2", quietly = TRUE)) {
 #'   draw_bars(vals, theme = "azurerose", xlab = "Contribution", engine = "ggplot2")
 #' }
-#'
-#' # Waterfall chart
-#' cs <- cumsum(c(10, vals))
-#' draw_bars(to = cs[-1], from = cs[-length(cs)], labels = names(vals),
-#'           connect = TRUE, vline = 10, theme = "steps")
-#'
-#' # 2. Multi-line series / ICE curves
-#' x_grid <- seq(0, 10, length.out = 30)
-#' y_mat <- sapply(1:5, function(i) sin(x_grid / 2) * i * 0.4)
-#' draw_series(x_grid, y_mat, theme = "Okabe-Ito", xlab = "Temp", ylab = "Effect")
-#'
-#' # 3. 2D Surface plot
-#' g <- seq(-2, 2, length.out = 25)
-#' z_mat <- outer(g, g, function(a, b) a * b)
-#' draw_surface(g, g, z_mat, theme = "azurerose", xlab = "x1", ylab = "x2")
-#'
-#' # 4. Matrix heatmap & Boxplots
-#' m <- cor(mtcars[, 1:4])
-#' draw_matrix(m, theme = "RdBu")
-#' draw_boxes(split(iris$Sepal.Length, iris$Species), theme = "Set 2", xlab = "Length")
-#'
 #' @export
 #'
 draw_bars <- function(
-    to, from = 0, labels = NULL, horizontal = TRUE,
-    type = c("barplot", "dotchart", "none"), theme = NULL,
-    theme.by = NULL, middle = 0, limits = NULL, width = NULL,
-    vline = NULL, connect = FALSE,
-    main = NULL, sub = NULL, xlab = NULL, ylab = NULL,
-    engine = getOption("dualplot.engine", "base"), ...
+    to, from = 0, ticks = NULL, horizontal = TRUE, type = c("bar", "dot"),
+    middle = 0, limits = NULL, width = NULL, vline = NULL, connect = FALSE,
+    ..., main = NULL, sub = NULL, xlab = NULL, ylab = NULL,
+    theme = NULL, theme.values = NULL, legend = NULL, legend.title = NULL,
+    engine = getOption("dualplot.engine", "graphics")
 ) {
-  engine <- match.arg(engine, c("base", "gg", "graphics", "ggplot2"))
-  fun <- if (engine == "graphics" || engine == "base")
-    draw_bars_base else draw_bars_gg
-  fun(
-    to = to, from = from, labels = labels, horizontal = horizontal,
-    type = type, theme = theme, theme.by = theme.by, middle = middle,
-    limits = limits, width = width, vline = vline, connect = connect,
+  engine <- match.arg(engine, c("graphics", "ggplot2"))
+  legend <- legend %||% (engine == "ggplot2")
+  fn <- if (engine == "graphics") draw_bars_base else { check_ggplot2(); draw_bars_gg }
+  fn(
+    to = to, from = from, ticks = ticks, horizontal = horizontal, type = type,
+    theme = theme, theme.values = theme.values, legend = legend, legend.title = legend.title,
+    middle = middle, limits = limits, width = width, vline = vline, connect = connect,
     main = main, sub = sub, xlab = xlab, ylab = ylab, ...
   )
 }
 
-#' @rdname dualplot
-#' @inheritParams draw_series_base
+#' Draw Multi-Line Series and ICE Curves
+#'
+#' @param x vector of x-axis values (numeric, factor, or character).
+#' @param y numeric matrix or vector of y-values (\code{NROW(y) == length(x)}).
+#' @param discrete logical; if \code{NULL}, inferred automatically from \code{x}.
+#' @param limits optional numeric vector of length 2 for y-axis limits.
+#' @param points optional \code{data.frame} with columns \code{x} and \code{y}
+#'   (and optional \code{col}, \code{pch}, \code{cex}) for overlaying points.
+#' @param ... additional graphical parameters.
+#' @param main,sub,xlab,ylab optional plot titles and axis labels.
+#' @param theme optional color theme name or \code{"colortheme"} object.
+#' @param theme.values optional vector (length \code{ncol(y)}) mapped to line colors via \code{theme}.
+#' @param legend logical or character legend position.
+#' @param legend.title optional title string for the legend.
+#' @param engine graphics backend: \code{"graphics"} or \code{"ggplot2"}.
+#'
+#' @return Invisibly returns \code{NULL} for \code{"graphics"}, or a \code{"ggplot"} object for \code{"ggplot2"}.
+#' @examples
+#' x <- seq(0, 2 * pi, length.out = 50)
+#' y <- cbind(Sine = sin(x), Cosine = cos(x))
+#' obs <- data.frame(x = c(1, 3, 5), y = sin(c(1, 3, 5)))
+#'
+#' draw_lines(
+#'   x, y, points = obs, theme = "Okabe-Ito",
+#'   xlab = "x", ylab = "Value", legend = "topright", legend.title = "Series"
+#' )
+#'
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   draw_lines(x, y, points = obs, theme = "Okabe-Ito", engine = "ggplot2")
+#' }
 #' @export
 #'
-draw_series <- function(
-    x, y, theme = NULL, theme.by = NULL, discrete = NULL,
-    limits = NULL, points = NULL,
-    main = NULL, sub = NULL, xlab = "", ylab = "",
-    engine = getOption("dualplot.engine", "base"), ...
+draw_lines <- function(
+    x, y, discrete = NULL, limits = NULL, points = NULL,
+    ..., main = NULL, sub = NULL, xlab = NULL, ylab = NULL,
+    theme = NULL, theme.values = NULL, legend = NULL, legend.title = NULL,
+    engine = getOption("dualplot.engine", "graphics")
 ) {
-  engine <- match.arg(engine, c("base", "gg", "graphics", "ggplot2"))
-  fun <- if (engine == "graphics" || engine == "base")
-    draw_series_base else draw_series_gg
-  fun(
-    x = x, y = y, theme = theme, theme.by = theme.by, discrete = discrete,
-    limits = limits, points = points,
+  engine <- match.arg(engine, c("graphics", "ggplot2"))
+  legend <- legend %||% (engine == "ggplot2")
+  fn <- if (engine == "graphics") draw_lines_base else { check_ggplot2(); draw_lines_gg }
+  fn(
+    x = x, y = y, theme = theme, theme.values = theme.values,
+    legend = legend, legend.title = legend.title,
+    discrete = discrete, limits = limits, points = points,
     main = main, sub = sub, xlab = xlab, ylab = ylab, ...
   )
 }
 
-#' @rdname dualplot
-#' @inheritParams draw_points_base
+#' Draw Scatter and Jitter Plots
+#'
+#' @param x,y numeric vectors of coordinates.
+#' @param middle numeric midpoint for diverging color themes (default \code{0}).
+#' @param xticks,yticks optional character vectors for discrete axis tick labels.
+#' @param xlim,ylim optional axis limits.
+#' @param overlay logical; if \code{TRUE} and \code{engine = "graphics"}, adds points to an existing plot.
+#' @param ... additional graphical parameters.
+#' @param main,sub,xlab,ylab optional plot titles and axis labels.
+#' @param theme optional color theme name or \code{"colortheme"} object.
+#' @param theme.values optional vector mapped to point colors via \code{theme}.
+#' @param legend logical or character legend position.
+#' @param legend.title optional title string for the legend.
+#' @param engine graphics backend: \code{"graphics"} or \code{"ggplot2"}.
+#'
+#' @return Invisibly returns \code{NULL} for \code{"graphics"}, or a \code{"ggplot"} object for \code{"ggplot2"}.
+#' @examples
+#' draw_points(
+#'   mtcars$wt, mtcars$mpg,
+#'   theme = "viridis", theme.values = mtcars$hp,
+#'   xlab = "Weight", ylab = "MPG",
+#'   legend = "topright", legend.title = "Horsepower"
+#' )
+#'
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   draw_points(
+#'     mtcars$wt, mtcars$mpg,
+#'     theme = "viridis", theme.values = mtcars$hp,
+#'     xlab = "Weight", ylab = "MPG", legend.title = "Horsepower",
+#'     engine = "ggplot2"
+#'   )
+#' }
 #' @export
 #'
 draw_points <- function(
-    x, y, theme = NULL, theme.by = NULL, middle = 0,
-    xticks = NULL, yticks = NULL, xlim = NULL, ylim = NULL,
-    overlay = FALSE, main = NULL, sub = NULL, xlab = "", ylab = "",
-    engine = getOption("dualplot.engine", "base"), ...
+    x, y, middle = 0, xticks = NULL, yticks = NULL, xlim = NULL, ylim = NULL,
+    overlay = FALSE, ..., main = NULL, sub = NULL, xlab = NULL, ylab = NULL,
+    theme = NULL, theme.values = NULL, legend = NULL, legend.title = NULL,
+    engine = getOption("dualplot.engine", "graphics")
 ) {
-  engine <- match.arg(engine, c("base", "gg", "graphics", "ggplot2"))
-  fun <- if (engine == "graphics" || engine == "base")
-    draw_points_base else draw_points_gg
-  fun(
-    x = x, y = y, theme = theme, theme.by = theme.by, middle = middle,
-    xticks = xticks, yticks = yticks, xlim = xlim, ylim = ylim,
+  engine <- match.arg(engine, c("graphics", "ggplot2"))
+  legend <- legend %||% (engine == "ggplot2")
+  fn <- if (engine == "graphics") draw_points_base else { check_ggplot2(); draw_points_gg }
+  fn(
+    x = x, y = y, theme = theme, theme.values = theme.values,
+    legend = legend, legend.title = legend.title,
+    middle = middle, xticks = xticks, yticks = yticks, xlim = xlim, ylim = ylim,
     overlay = overlay, main = main, sub = sub, xlab = xlab, ylab = ylab, ...
   )
 }
 
-#' @rdname dualplot
-#' @inheritParams draw_surface_base
+#' Draw 2D Surface / Heatmap Plots
+#'
+#' @param x,y numeric vectors of grid coordinates.
+#' @param z numeric matrix of surface values (\code{length(x)} by \code{length(y)}).
+#' @param zlim optional numeric vector of length 2 for color scale limits.
+#' @param middle numeric midpoint for diverging color themes (default \code{0}).
+#' @param xticks,yticks optional character vectors for discrete axis tick labels.
+#' @param points optional \code{data.frame} with \code{x} and \code{y} columns to overlay.
+#' @param ... additional graphical parameters.
+#' @param main,sub,xlab,ylab optional plot titles and axis labels.
+#' @param theme optional color theme name or \code{"colortheme"} object.
+#' @param legend logical or character legend position.
+#' @param legend.title optional title string for the legend.
+#' @param engine graphics backend: \code{"graphics"} or \code{"ggplot2"}.
+#'
+#' @return Invisibly returns \code{NULL} for \code{"graphics"}, or a \code{"ggplot"} object for \code{"ggplot2"}.
+#' @examples
+#' gx <- seq(-2, 2, length.out = 25)
+#' gy <- seq(-2, 2, length.out = 25)
+#' gz <- outer(gx, gy, function(a, b) sin(a) * cos(b))
+#' pts <- data.frame(x = c(-1, 0.5, 1.2), y = c(0.8, -0.5, 1.0))
+#'
+#' draw_surface(
+#'   gx, gy, gz, points = pts,
+#'   xlab = "X1", ylab = "X2", legend = "right", legend.title = "Effect"
+#' )
+#'
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   draw_surface(
+#'     gx, gy, gz, points = pts,
+#'     xlab = "X1", ylab = "X2", legend.title = "Effect", engine = "ggplot2"
+#'   )
+#' }
 #' @export
 #'
 draw_surface <- function(
-    x, y, z, theme = NULL, zlim = NULL, middle = 0,
-    xticks = NULL, yticks = NULL, points = NULL,
-    main = NULL, sub = NULL, xlab = "", ylab = "",
-    engine = getOption("dualplot.engine", "base"), ...
+    x, y, z, zlim = NULL, middle = 0, xticks = NULL, yticks = NULL,
+    points = NULL, ...,  main = NULL, sub = NULL, xlab = NULL, ylab = NULL,
+    theme = NULL, legend = NULL, legend.title = NULL,
+    engine = getOption("dualplot.engine", "graphics")
 ) {
-  engine <- match.arg(engine, c("base", "gg", "graphics", "ggplot2"))
-  fun <- if (engine == "graphics" || engine == "base")
-    draw_surface_base else draw_surface_gg
-  fun(
-    x = x, y = y, z = z, theme = theme, zlim = zlim, middle = middle,
-    xticks = xticks, yticks = yticks, points = points,
+  engine <- match.arg(engine, c("graphics", "ggplot2"))
+  legend <- legend %||% (engine == "ggplot2")
+  fn <- if (engine == "graphics") draw_surface_base else { check_ggplot2(); draw_surface_gg }
+  fn(
+    x = x, y = y, z = z, theme = theme, legend = legend, legend.title = legend.title,
+    zlim = zlim, middle = middle, xticks = xticks, yticks = yticks, points = points,
     main = main, sub = sub, xlab = xlab, ylab = ylab, ...
   )
 }
 
-#' @rdname dualplot
-#' @inheritParams draw_matrix_base
+#' Draw Matrix Heatmaps
+#'
+#' @param z numeric matrix of values to plot.
+#' @param ticks character vector of row/column tick labels.
+#' @param middle numeric midpoint for diverging color themes (default \code{0}).
+#' @param ... additional graphical parameters.
+#' @param main,sub,xlab,ylab optional plot titles and axis labels.
+#' @param theme optional color theme name or \code{"colortheme"} object.
+#' @param legend logical or character legend position.
+#' @param legend.title optional title string for the legend.
+#' @param engine graphics backend: \code{"graphics"} or \code{"ggplot2"}.
+#'
+#' @return Invisibly returns \code{NULL} for \code{"graphics"}, or a \code{"ggplot"} object for \code{"ggplot2"}.
+#' @examples
+#' cm <- cor(mtcars[, 1:5])
+#' draw_matrix(cm, theme = "azurerose", legend = "right", legend.title = "Corr")
+#'
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   draw_matrix(cm, theme = "azurerose", legend.title = "Corr", engine = "ggplot2")
+#' }
 #' @export
 #'
 draw_matrix <- function(
-    z, labels = rownames(z), theme = NULL,
-    main = NULL, sub = NULL, xlab = "", ylab = "",
-    engine = getOption("dualplot.engine", "base"), ...
+    z, ticks = rownames(z), middle = 0, ...,
+    main = NULL, sub = NULL, xlab = NULL, ylab = NULL,
+    theme = NULL, legend = NULL, legend.title = NULL,
+    engine = getOption("dualplot.engine", "graphics")
 ) {
-  engine <- match.arg(engine, c("base", "gg", "graphics", "ggplot2"))
-  fun <- if (engine == "graphics" || engine == "base")
-    draw_matrix_base else draw_matrix_gg
-  fun(
-    z = z, labels = labels, theme = theme,
-    main = main, sub = sub, xlab = xlab, ylab = ylab, ...
+  engine <- match.arg(engine, c("graphics", "ggplot2"))
+  legend <- legend %||% (engine == "ggplot2")
+  fn <- if (engine == "graphics") draw_matrix_base else { check_ggplot2(); draw_matrix_gg }
+  fn(
+    z = z, ticks = ticks, theme = theme, legend = legend, legend.title = legend.title,
+    middle = middle, main = main, sub = sub, xlab = xlab, ylab = ylab, ...
   )
 }
 
-#' @rdname dualplot
-#' @inheritParams draw_boxes_base
+#' Draw Boxplots
+#'
+#' @param x a named list of numeric vectors (one per category).
+#' @param horizontal logical; if \code{TRUE}, boxes are drawn horizontally.
+#' @param ... additional graphical parameters.
+#' @param main,sub,xlab,ylab optional plot titles and axis labels.
+#' @param theme optional color theme name or \code{"colortheme"} object.
+#' @param theme.values optional vector (length \code{length(x)}) mapped to box fills via \code{theme}.
+#' @param legend logical or character legend position.
+#' @param legend.title optional title string for the legend.
+#' @param engine graphics backend: \code{"graphics"} or \code{"ggplot2"}.
+#'
+#' @return Invisibly returns \code{NULL} for \code{"graphics"}, or a \code{"ggplot"} object for \code{"ggplot2"}.
+#' @examples
+#' groups <- split(iris$Sepal.Length, iris$Species)
+#' draw_boxes(groups, theme = "Okabe-Ito", xlab = "Sepal Length")
+#'
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   draw_boxes(groups, theme = "Okabe-Ito", xlab = "Sepal Length", engine = "ggplot2")
+#' }
 #' @export
 #'
 draw_boxes <- function(
-    x, theme = NULL, theme.by = NULL, horizontal = TRUE,
-    main = NULL, sub = NULL, xlab = "", ylab = NULL,
-    engine = getOption("dualplot.engine", "base"), ...
+    x, horizontal = TRUE, ..., main = NULL, sub = NULL, xlab = NULL, ylab = NULL,
+    theme = NULL, theme.values = NULL, legend = NULL, legend.title = NULL,
+    engine = getOption("dualplot.engine", "graphics")
 ) {
-  engine <- match.arg(engine, c("base", "gg", "graphics", "ggplot2"))
-  fun <- if (engine == "graphics" || engine == "base")
-    draw_boxes_base else draw_boxes_gg
-  fun(
-    x = x, theme = theme, theme.by = theme.by, horizontal = horizontal,
-    main = main, sub = sub, xlab = xlab, ylab = ylab, ...
+  engine <- match.arg(engine, c("graphics", "ggplot2"))
+  legend <- legend %||% (engine == "ggplot2")
+  fn <- if (engine == "graphics") draw_boxes_base else { check_ggplot2(); draw_boxes_gg }
+  fn(
+    x = x, theme = theme, theme.values = theme.values,
+    legend = legend, legend.title = legend.title,
+    horizontal = horizontal, main = main, sub = sub, xlab = xlab, ylab = ylab, ...
   )
+}
+
+#' Set or Get Global Options for dualplot
+#'
+#' @param ... options specified as \code{name = value} pairs (e.g.,
+#'   \code{engine = "ggplot2"}), character strings to query specific options,
+#'   or empty to retrieve all current \code{dualplot.*} options.
+#'
+#' @return A named list of current or previous option values.
+#' @examples
+#' old <- dualplot_options(engine = "ggplot2")
+#' dualplot_options("engine")
+#' dualplot_options(old)
+#' @export
+#'
+dualplot_options <- function(...) {
+  args <- list(...)
+  if (length(args) == 0L) {
+    opts <- options()
+    opts <- opts[grep("^dualplot\\.", names(opts))]
+    if (length(opts) == 0L) return(list())
+    names(opts) <- sub("^dualplot\\.", "", names(opts))
+    return(opts)
+  }
+  if (length(args) == 1L && is.list(args[[1L]]) && !is.null(names(args[[1L]]))) {
+    args <- args[[1L]]
+  }
+  if (is.null(names(args)) && all(vapply(args, is.character, logical(1L)))) {
+    nms <- unlist(args)
+    res <- lapply(paste0("dualplot.", nms), getOption)
+    names(res) <- nms
+    return(res)
+  }
+  if (is.null(names(args)) || any(names(args) == "")) {
+    stop("options must be specified as name = value", call. = FALSE)
+  }
+  valid <- c("engine", "gg.theme")
+  new <- list()
+  for (nm in names(args)) {
+    if (!nm %in% valid) {
+      warning(
+        sprintf("unknown option '%s': expected one of %s",
+                nm, paste(valid, collapse = ", ")),
+        call. = FALSE
+      )
+    }
+    if (nm == "engine") {
+      args[[nm]] <- match.arg(args[[nm]], c("graphics", "ggplot2"))
+    }
+    new[[paste0("dualplot.", nm)]] <- args[[nm]]
+  }
+  old <- options(new)
+  names(old) <- sub("^dualplot\\.", "", names(old))
+  invisible(old)
+}
+
+#' Monograph Visual Theme for ggplot2
+#'
+#' Returns a clean, publication-ready \strong{ggplot2} theme featuring a white
+#' background, crisp dark border, optional grid lines, and serif typography.
+#'
+#' @param grid.type character string specifying which grid lines to display:
+#'   one of \code{"none"} (default), \code{"x"}, \code{"y"}, or \code{"xy"}.
+#' @param base_size base font size in pts (default \code{11}).
+#' @param base_family base font family (default \code{"serif"}).
+#' @param base_line_size base size for line elements.
+#' @param base_rect_size base size for rectangle elements.
+#' @param ... additional arguments passed to \code{ggplot2::theme_light()}.
+#'
+#' @return A \code{ggplot2} \code{theme} object.
+#' @seealso \code{\link{par_monograph}}
+#' @examples
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   draw_bars(c(A = 0.5, B = -0.3), theme = "azurerose", engine = "ggplot2") +
+#'     theme_monograph(grid.type = "x")
+#' }
+#' @export
+#'
+theme_monograph <- function(
+    grid.type = c("none", "x", "y", "xy"),
+    base_size = 11,
+    base_family = "serif",
+    base_line_size = base_size / 22,
+    base_rect_size = base_size / 22,
+    ...
+) {
+  check_ggplot2()
+  grid.type <- match.arg(grid.type)
+  grid_x <- grid.type %in% c("x", "xy")
+  grid_y <- grid.type %in% c("y", "xy")
+
+  e1 <- ggplot2::theme_light(
+    base_size = base_size,
+    base_family = base_family,
+    base_line_size = base_line_size,
+    base_rect_size = base_rect_size,
+    ...
+  )
+  e2 <- ggplot2::theme(
+    axis.line = ggplot2::element_blank(),
+    panel.border = ggplot2::element_rect(
+      fill = NA,
+      colour = "gray5",
+      linewidth = ggplot2::rel(0.5)
+    ),
+    panel.grid.major.x = if (!grid_x) ggplot2::element_blank() else NULL,
+    panel.grid.minor.x = if (!grid_x) ggplot2::element_blank() else NULL,
+    panel.grid.major.y = if (!grid_y) ggplot2::element_blank() else NULL,
+    panel.grid.minor.y = if (!grid_y) ggplot2::element_blank() else NULL
+  )
+  e1 + e2
+}
+
+#' Monograph Graphical Parameters for Base Graphics
+#'
+#' Wraps \code{\link[graphics]{par}()} to apply a clean, publication-ready base
+#' graphics aesthetic matching \code{\link{theme_monograph}()}.
+#'
+#' @param ... graphical parameters in \code{name = value} form passed to
+#'   \code{\link[graphics]{par}()} to override the monograph defaults.
+#'
+#' @return Invisibly returns a named list of the previous values of the modified
+#'   graphical parameters.
+#' @seealso \code{\link{theme_monograph}}
+#' @examples
+#' old_par <- par_monograph()
+#' draw_bars(c(A = 0.5, B = -0.3), theme = "azurerose", xlab = "Effect")
+#' graphics::par(old_par)
+#' @export
+#'
+par_monograph <- function(...) {
+  dots <- list(...)
+  dots <- dots[names(dots) %in% names(graphics::par(no.readonly = TRUE))]
+  defaults <- list(
+    bg = "white", bty = "o", mar = c(4.1, 4.1, 2.1, 1.1), family = "serif",
+    font = 1L, font.axis = 1L, font.lab = 1L, font.main = 1L, font.sub = 1L,
+    col = "black", col.axis = "black", col.lab = "black", col.main = "black",
+    col.sub = "black", cex = 1, cex.axis = 1, cex.lab = 1, cex.main = 1.2,
+    cex.sub = 0.9, las = 0L, lty = "solid", lwd = 1, pch = 16L
+  )
+  args <- utils::modifyList(defaults, dots)
+  do.call(graphics::par, args)
 }

@@ -1,16 +1,25 @@
 # R/dualplot_base.R
-# Base graphics rendering primitives
+# Internal Base graphics rendering primitives
 
-adjust_left_margin <- function(labels, pad = 1 / 16) {
-  mai <- graphics::par("mai")
-  if (is.null(labels) || length(labels) == 0L) return(mai)
+adjust_left_margin <- function(ticks, mai = graphics::par("mai"), pad = 1 / 16) {
+  if (is.null(ticks) || length(ticks) == 0L) return(mai)
   cex <- graphics::par("cex.axis")
   req <- max(
-    graphics::strwidth(as.character(labels), units = "inches", cex = cex),
+    graphics::strwidth(as.character(ticks), units = "inches", cex = cex),
     na.rm = TRUE
   )
   req <- mai[4L] + req + pad
   if (mai[2L] < req) mai[2L] <- req
+  mai
+}
+
+adjust_legend_margin <- function(legend, mai = graphics::par("mai"), space = 0.5) {
+  if (isFALSE(legend) || is.null(legend) || isTRUE(legend)) return(mai)
+  pos <- as.character(legend)[1L]
+  if (pos == "bottom") mai[1L] <- mai[1L] + space * 0.85
+  if (pos == "left")   mai[2L] <- mai[2L] + space
+  if (pos == "top")    mai[3L] <- mai[3L] + space * 0.85
+  if (pos == "right")  mai[4L] <- mai[4L] + space
   mai
 }
 
@@ -26,35 +35,167 @@ as_param_matrix <- function(x, nrow, ncol) {
   }
 }
 
-#' Base Graphics Bar, Dot, and Waterfall Charts
-#'
-#' @param to numeric vector or matrix (\code{nrow} categories by \code{ncol} groups) of end values.
-#' @param from numeric vector or matrix of start values (default \code{0}).
-#' @param labels character vector of category labels (length \code{nrow(to)}).
-#' @param horizontal logical; if \code{TRUE}, bars/dots are drawn horizontally (top-to-bottom).
-#' @param type one of \code{"barplot"}, \code{"dotchart"}, or \code{"none"}.
-#' @param theme optional color theme name or \code{"colortheme"} object.
-#' @param theme.by optional vector or matrix used to map colors via \code{theme}.
-#'   Defaults to \code{to - from} when \code{ncol(to) == 1}, or group indices when \code{ncol(to) > 1}.
-#' @param middle numeric midpoint for diverging color themes (default \code{0}).
-#' @param limits optional numeric vector of length 2 for value axis limits.
-#' @param width optional numeric bar/dodge width.
-#' @param vline optional numeric intercept for a reference line.
-#' @param connect logical; if \code{TRUE}, draws step lines connecting bars (for waterfall charts).
-#' @param main,sub,xlab,ylab optional plot titles and axis labels.
-#' @param ... additional graphical parameters (base or ggplot2 names supported).
-#'
-#' @return invisibly returns \code{NULL}.
-#' @export
-#'
+draw_base_legend <- function(
+    values, theme, legend = FALSE, title = NULL,
+    style = c("fill", "line", "point"), middle = 0, limits = NULL,
+    pch = 16L, lty = 1L, lwd = 1L
+) {
+  if (isFALSE(legend) || is.null(legend) || is.null(theme) || is.null(values)) {
+    return(invisible(NULL))
+  }
+  valid_pos <- c(
+    "topright", "topleft", "bottomright", "bottomleft",
+    "top", "bottom", "left", "right"
+  )
+  pos <- if (isTRUE(legend)) "right" else match.arg(as.character(legend)[1L], valid_pos)
+  is_outside <- pos %in% c("top", "bottom", "left", "right")
+  is_horiz <- pos %in% c("top", "bottom")
+  style <- match.arg(style)
+  ct <- colortheme::colortheme(theme)
+
+  font_axis <- graphics::par("font.axis")
+  font_lab  <- graphics::par("font.lab")
+
+  if (is_outside) {
+    opar <- graphics::par(xpd = NA)
+    on.exit(graphics::par(opar), add = TRUE)
+  }
+
+  usr <- graphics::par("usr")
+  dx <- diff(usr[1:2])
+  dy <- diff(usr[3:4])
+
+  plt <- graphics::par("plt")
+  mai <- graphics::par("mai")
+  ux_per_in <- dx / (graphics::par("pin")[1L])
+  uy_per_in <- dy / (graphics::par("pin")[2L])
+
+  # Discrete scale
+  if (is_discrete(values) || ct$type == "qualitative") {
+    f <- if (is.factor(values)) droplevels(values) else factor(values)
+    lvls <- levels(f)
+    if (length(lvls) == 0L) return(invisible(NULL))
+    cols <- ct$palette(length(lvls))
+
+    leg_args <- list(
+      legend = lvls, title = title, horiz = is_horiz,
+      bty = "n", bg = NA, cex = 0.85,
+      text.font = font_axis, title.font = font_lab
+    )
+    if (style == "fill") {
+      leg_args$fill <- cols
+      leg_args$border <- "gray30"
+    } else if (style == "line") {
+      leg_args$col <- cols
+      leg_args$lty <- lty
+      leg_args$lwd <- lwd
+    } else {
+      leg_args$col <- cols
+      leg_args$pch <- pch
+    }
+
+    if (is_outside) {
+      meas <- do.call(graphics::legend, c(list(x = usr[1L], y = usr[3L], plot = FALSE), leg_args))
+      lw <- meas$rect$w
+      lh <- meas$rect$h
+      pad_in <- 0.12
+
+      if (pos == "right") {
+        leg_args$x <- usr[2L] + (mai[4L] - pad_in) * ux_per_in - lw
+        leg_args$y <- mean(usr[3:4]) + lh / 2
+      } else if (pos == "left") {
+        leg_args$x <- usr[1L] - (mai[2L] - pad_in) * ux_per_in
+        leg_args$y <- mean(usr[3:4]) + lh / 2
+      } else if (pos == "top") {
+        leg_args$x <- mean(usr[1:2]) - lw / 2
+        leg_args$y <- usr[4L] + (mai[3L] - pad_in * 0.6) * uy_per_in
+      } else if (pos == "bottom") {
+        leg_args$x <- mean(usr[1:2]) - lw / 2
+        leg_args$y <- usr[3L] - (mai[1L] - pad_in * 0.6) * uy_per_in + lh
+      }
+    } else {
+      leg_args$x <- pos
+    }
+    return(do.call(graphics::legend, leg_args))
+  }
+
+  # Continuous scale (colorbar)
+  rng <- limits %||% range(values, na.rm = TRUE, finite = TRUE)
+  if (!all(is.finite(rng)) || diff(rng) == 0) return(invisible(NULL))
+  if (ct$type == "diverging") {
+    zmax <- max(abs(rng - middle))
+    rng <- c(-zmax, zmax) + middle
+  }
+
+  pad_x <- dx * 0.035
+  pad_y <- dy * 0.055
+  has_title <- !is.null(title) && nzchar(title)
+  ticks <- pretty(rng, n = 3L)
+  ticks <- ticks[ticks >= rng[1L] & ticks <= rng[2L]]
+  tick_labs <- format(ticks, digits = 3)
+  pad_in <- 0.15
+
+  if (is_horiz) {
+    w <- dx * 0.45
+    h <- dy * 0.045
+    x1 <- mean(usr[1:2]) - w / 2
+    x2 <- x1 + w
+    if (pos == "bottom") {
+      y1 <- usr[3L] - (mai[1L] - pad_in * 1.4) * uy_per_in
+      y2 <- y1 + h
+    } else {
+      y2 <- usr[4L] + (mai[3L] - pad_in * 1.2) * uy_per_in
+      y1 <- y2 - h
+    }
+    cols <- matrix(ct$palette(128L), nrow = 1L)
+    graphics::rasterImage(grDevices::as.raster(cols), x1, y1, x2, y2)
+
+    tx <- x1 + (ticks - rng[1L]) / diff(rng) * w
+    graphics::text(tx, y1 - pad_y * 0.35, labels = tick_labs, adj = c(0.5, 1), cex = 0.75, font = font_axis)
+    if (has_title) {
+      graphics::text(mean(c(x1, x2)), y2 + pad_y * 0.35, labels = title, adj = c(0.5, 0), cex = 0.8, font = font_lab)
+    }
+  } else {
+    w <- dx * 0.045
+    h <- if (is_outside) dy * 0.55 else dy * 0.28
+    label_w <- max(graphics::strwidth(tick_labs, cex = 0.75), na.rm = TRUE) + pad_x * 0.4
+
+    if (is_outside) {
+      if (pos == "right") {
+        x2 <- usr[2L] + (mai[4L] - pad_in) * ux_per_in - label_w
+        x1 <- x2 - w
+      } else {
+        x1 <- usr[1L] - (mai[2L] - pad_in) * ux_per_in
+        x2 <- x1 + w
+      }
+      y2 <- mean(usr[3:4]) + h / 2
+      y1 <- y2 - h
+    } else {
+      x1 <- if (grepl("left", pos)) usr[1L] + pad_x else usr[2L] - pad_x - w - label_w
+      x2 <- x1 + w
+      y2 <- if (grepl("bottom", pos)) usr[3L] + pad_y + h else usr[4L] - pad_y
+      y1 <- y2 - h
+    }
+
+    cols <- rev(ct$palette(128L))
+    graphics::rasterImage(grDevices::as.raster(cols), x1, y1, x2, y2)
+
+    ty <- y1 + (ticks - rng[1L]) / diff(rng) * h
+    graphics::text(x2 + pad_x * 0.25, ty, labels = tick_labs, adj = c(0, 0.5), cex = 0.75, font = font_axis)
+    if (has_title) {
+      graphics::text(x1, y2 + pad_y * 0.45, labels = title, adj = c(0, 0), cex = 0.8, font = font_lab)
+    }
+  }
+  invisible(NULL)
+}
+
 draw_bars_base <- function(
-    to, from = 0, labels = NULL, horizontal = TRUE,
-    type = c("barplot", "dotchart", "none"), theme = NULL,
-    theme.by = NULL, middle = 0, limits = NULL, width = NULL,
-    vline = NULL, connect = FALSE,
+    to, from = 0, ticks = NULL, horizontal = TRUE, type = c("bar", "dot"),
+    theme = NULL, theme.values = NULL, legend = FALSE, legend.title = NULL,
+    middle = 0, limits = NULL, width = NULL, vline = NULL, connect = FALSE,
     main = NULL, sub = NULL, xlab = NULL, ylab = NULL, ...
 ) {
-  type <- match.arg(type)
+  type <- match.arg(sub("plot$|chart$", "", type), c("bar", "dot"))
   dots <- cast_to_base_params(dots = list(...), defaults = list(), alpha.on = NULL)
 
   main <- dots$main %||% main
@@ -65,29 +206,29 @@ draw_bars_base <- function(
   to <- as.matrix(to)
   n <- nrow(to)
   m <- ncol(to)
-  labels <- labels %||% rownames(to) %||% as.character(seq_len(n))
+  ticks <- ticks %||% rownames(to) %||% as.character(seq_len(n))
+  g_names <- colnames(to) %||% as.character(seq_len(m))
   from <- as_param_matrix(from %||% 0, n, m)
 
-  if (horizontal) {
-    opar <- graphics::par(c("mai", "las"))
-    on.exit(graphics::par(opar), add = TRUE)
-    graphics::par(mai = adjust_left_margin(labels), las = 1L)
-  }
+  opar <- graphics::par(c("mai", "las"))
+  on.exit(graphics::par(opar), add = TRUE)
+  mai <- if (horizontal) adjust_left_margin(ticks) else graphics::par("mai")
+  mai <- adjust_legend_margin(legend, mai)
+  graphics::par(mai = mai, las = if (horizontal) 1L else graphics::par("las"))
 
-  # Resolve theme colors if theme is provided and explicit fill/col is not
   theme_cols <- NULL
+  cval <- NULL
   if (!is.null(theme)) {
     ct <- colortheme::colortheme(theme)
-    cval <- theme.by %||% if (m > 1L) {
-      factor(rep(colnames(to) %||% seq_len(m), each = n),
-             levels = colnames(to) %||% as.character(seq_len(m)))
+    cval <- theme.values %||% if (m > 1L) {
+      factor(rep(g_names, each = n), levels = g_names)
     } else {
       as.vector(to - from)
     }
     theme_cols <- colortheme::map_to_colors(cval, theme = ct, middle = middle)
   }
 
-  if (type == "barplot") {
+  if (type == "bar") {
     raw_fill <- dots$fill %||% theme_cols %||% "gray65"
     raw_col  <- dots$border %||% dots$col %||% NA
     fill_mat <- as_param_matrix(apply_alpha(raw_fill, dots$alpha), n, m)
@@ -98,7 +239,7 @@ draw_bars_base <- function(
   }
   pch_mat <- as_param_matrix(dots$pch %||% 16L, n, m)
   cex_val <- dots$cex %||% 1
-  lty_val <- dots$lty %||% (if (type == "dotchart") 3L else 1L)
+  lty_val <- dots$lty %||% (if (type == "dot") 3L else 1L)
   lwd_val <- dots$lwd %||% 1L
 
   rng <- range(c(to, from, vline), na.rm = TRUE)
@@ -112,9 +253,9 @@ draw_bars_base <- function(
     ylim = if (horizontal) c(0.5, n + 0.5) else limits
   )
   graphics::box()
-  graphics::title(main = main, sub = sub, xlab = xlab, ylab = ylab)
+  graphics::title(main = main, sub = sub, xlab = xlab %||% "", ylab = ylab %||% "")
   graphics::axis(side = if (horizontal) 1L else 2L)
-  graphics::axis(side = if (horizontal) 2L else 1L, at = at, labels = labels)
+  graphics::axis(side = if (horizontal) 2L else 1L, at = at, labels = ticks)
 
   if (!is.null(vline)) {
     v_lty <- if (connect) 3L else 1L
@@ -125,7 +266,7 @@ draw_bars_base <- function(
     }
   }
 
-  if (type == "barplot") {
+  if (type == "bar") {
     bw <- (width %||% (if (connect) 0.6 else 0.9)) / m
     offsets <- (seq_len(m) - (m + 1) / 2) * bw
     centers <- outer(at, offsets, "+")
@@ -153,8 +294,16 @@ draw_bars_base <- function(
         col = as.vector(fill_mat), border = as.vector(col_mat),
         lty = lty_val, lwd = lwd_val
       )
+      if (connect && n > 1L && m == 1L) {
+        seg_col <- if (all(is.na(col_mat))) graphics::par("fg") else col_mat[-n, 1L]
+        graphics::segments(
+          y0 = to[-n, 1L], x0 = at[-n] - hw,
+          y1 = to[-n, 1L], x1 = at[-1L] + hw,
+          col = seg_col, lty = lty_val, lwd = lwd_val
+        )
+      }
     }
-  } else if (type == "dotchart") {
+  } else {
     bw <- (width %||% 0.6) / m
     offsets <- (seq_len(m) - (m + 1) / 2) * bw
     centers <- outer(at, offsets, "+")
@@ -182,29 +331,22 @@ draw_bars_base <- function(
       )
     }
   }
+
+  if (!is.null(theme)) {
+    draw_base_legend(
+      values = cval, theme = theme, legend = legend, title = legend.title,
+      style = if (type == "bar") "fill" else "point",
+      middle = middle, limits = limits, pch = dots$pch %||% 16L
+    )
+  }
   invisible(NULL)
 }
 
-#' Base Graphics Multi-Line Series and ICE Curves
-#'
-#' @param x vector of x-axis values (numeric, factor, or character).
-#' @param y numeric matrix of y-values (\code{nrow(y) == length(x)}).
-#' @param theme optional color theme name or \code{"colortheme"} object.
-#' @param theme.by optional vector (length \code{ncol(y)}) mapped to line colors via \code{theme}.
-#' @param discrete logical; if \code{NULL}, inferred automatically from \code{x}.
-#' @param limits optional numeric vector of length 2 for y-axis limits.
-#' @param points optional \code{data.frame} with columns \code{x} and \code{y} (and optional \code{col}, \code{pch}, \code{cex})
-#'   for overlaying observation points.
-#' @param main,sub,xlab,ylab optional plot titles and axis labels.
-#' @param ... additional graphical parameters.
-#'
-#' @return invisibly returns \code{NULL}.
-#' @export
-#'
-draw_series_base <- function(
-    x, y, theme = NULL, theme.by = NULL, discrete = NULL,
-    limits = NULL, points = NULL,
-    main = NULL, sub = NULL, xlab = "", ylab = "", ...
+draw_lines_base <- function(
+    x, y, theme = NULL, theme.values = NULL,
+    legend = FALSE, legend.title = NULL,
+    discrete = NULL, limits = NULL, points = NULL,
+    main = NULL, sub = NULL, xlab = NULL, ylab = NULL, ...
 ) {
   y <- as.matrix(y)
   m <- ncol(y)
@@ -212,11 +354,18 @@ draw_series_base <- function(
   x_num <- if (discrete) seq_along(x) else as.numeric(x)
   ord <- if (discrete) seq_along(x_num) else order(x_num)
 
+  if (is.character(legend) && legend %in% c("top", "bottom", "left", "right")) {
+    opar <- graphics::par("mai")
+    on.exit(graphics::par(mai = opar), add = TRUE)
+    graphics::par(mai = adjust_legend_margin(legend, opar))
+  }
+
   dots <- list(...)
   g_names <- colnames(y) %||% paste0("series_", seq_len(m))
   theme_cols <- NULL
+  cval <- NULL
   if (!is.null(theme)) {
-    cval <- theme.by %||% factor(g_names, levels = g_names)
+    cval <- theme.values %||% factor(g_names, levels = g_names)
     theme_cols <- colortheme::map_to_colors(cval, theme = theme)
   }
 
@@ -226,7 +375,7 @@ draw_series_base <- function(
     type = if (discrete) "b" else "l",
     pch = 16L, lty = 1L, lwd = 1L,
     col = theme_cols %||% "black",
-    main = main, sub = sub, xlab = xlab, ylab = ylab,
+    main = main, sub = sub, xlab = xlab %||% "", ylab = ylab %||% "",
     ylim = limits %||% range(c(y, points$y), na.rm = TRUE),
     xaxt = if (discrete) "n" else "s"
   )
@@ -256,32 +405,31 @@ draw_series_base <- function(
     )
     do.call(graphics::points, p_args)
   }
+
+  if (!is.null(theme)) {
+    draw_base_legend(
+      values = cval, theme = theme, legend = legend, title = legend.title,
+      style = "line", lty = args$lty[1L], lwd = args$lwd[1L]
+    )
+  }
   invisible(NULL)
 }
 
-#' Base Graphics Scatter and Jitter Plots
-#'
-#' @param x,y numeric vectors of coordinates.
-#' @param theme optional color theme name or \code{"colortheme"} object.
-#' @param theme.by optional vector mapped to point colors via \code{theme}.
-#' @param middle numeric midpoint for diverging color themes (default \code{0}).
-#' @param xticks,yticks optional character vectors for discrete axis ticks.
-#' @param xlim,ylim optional axis limits.
-#' @param overlay logical; if \code{TRUE}, adds points to an existing plot via \code{graphics::points()}.
-#' @param main,sub,xlab,ylab optional plot titles and axis labels.
-#' @param ... additional graphical parameters.
-#'
-#' @return invisibly returns \code{NULL}.
-#' @export
-#'
 draw_points_base <- function(
-    x, y, theme = NULL, theme.by = NULL, middle = 0,
+    x, y, theme = NULL, theme.values = NULL,
+    legend = FALSE, legend.title = NULL, middle = 0,
     xticks = NULL, yticks = NULL, xlim = NULL, ylim = NULL,
-    overlay = FALSE, main = NULL, sub = NULL, xlab = "", ylab = "", ...
+    overlay = FALSE, main = NULL, sub = NULL, xlab = NULL, ylab = NULL, ...
 ) {
+  if (is.character(legend) && legend %in% c("top", "bottom", "left", "right")) {
+    opar <- graphics::par("mai")
+    on.exit(graphics::par(mai = opar), add = TRUE)
+    graphics::par(mai = adjust_legend_margin(legend, opar))
+  }
+
   theme_cols <- NULL
-  if (!is.null(theme) && !is.null(theme.by)) {
-    theme_cols <- colortheme::map_to_colors(theme.by, theme = theme, middle = middle)
+  if (!is.null(theme) && !is.null(theme.values)) {
+    theme_cols <- colortheme::map_to_colors(theme.values, theme = theme, middle = middle)
   }
 
   if (overlay) {
@@ -304,7 +452,7 @@ draw_points_base <- function(
     col = theme_cols %||% 1L, pch = 16L, cex = 1,
     xlim = xlim %||% (if (!is.null(xticks)) c(0.5, length(xticks) + 0.5) else NULL),
     ylim = ylim %||% (if (!is.null(yticks)) c(0.5, length(yticks) + 0.5) else NULL),
-    xlab = xlab, ylab = ylab, main = main, sub = sub,
+    xlab = xlab %||% "", ylab = ylab %||% "", main = main, sub = sub,
     axes = !has_custom_axes
   )
   args <- cast_to_base_params(dots = list(...), defaults = defaults, alpha.on = "col")
@@ -323,44 +471,67 @@ draw_points_base <- function(
       graphics::axis(2L)
     }
   }
+
+  if (!is.null(theme) && !is.null(theme.values)) {
+    draw_base_legend(
+      values = theme.values, theme = theme, legend = legend, title = legend.title,
+      style = "point", middle = middle, pch = args$pch[1L]
+    )
+  }
   invisible(NULL)
 }
 
-#' Base Graphics 2D Interaction Surface / Filled Contour Plot
-#'
-#' @param x,y numeric vectors of grid coordinates.
-#' @param z numeric matrix of surface values (\code{length(x)} by \code{length(y)}).
-#' @param theme optional color theme name or \code{"colortheme"} object.
-#' @param zlim optional numeric vector of length 2 for color scale limits.
-#' @param middle numeric midpoint for diverging color themes (default \code{0}).
-#' @param xticks,yticks optional character vectors for discrete axis ticks.
-#' @param points optional \code{data.frame} with \code{x} and \code{y} columns to overlay.
-#' @param main,sub,xlab,ylab optional plot titles and axis labels.
-#' @param ... additional graphical parameters.
-#'
-#' @return invisibly returns \code{NULL}.
-#' @export
-#'
 draw_surface_base <- function(
-    x, y, z, theme = NULL, zlim = NULL, middle = 0,
-    xticks = NULL, yticks = NULL, points = NULL,
-    main = NULL, sub = NULL, xlab = "", ylab = "", ...
+    x, y, z, theme = NULL, legend = FALSE, legend.title = NULL,
+    zlim = NULL, middle = 0, xticks = NULL, yticks = NULL, points = NULL,
+    main = NULL, sub = NULL, xlab = NULL, ylab = NULL, ...
 ) {
-  ct <- colortheme::colortheme(theme %||% getOption("colortheme.diverging", "azurerose"))
+  use_theme <- theme %||% getOption("colortheme.diverging", "azurerose")
+  ct <- colortheme::colortheme(use_theme)
   zlim <- zlim %||% range(z, na.rm = TRUE)
   if (ct$type == "diverging") {
     zmax <- max(abs(zlim - middle))
     zlim <- c(-zmax, zmax) + middle
   }
 
-  dots <- cast_to_base_params(dots = list(...), defaults = list(), alpha.on = NULL)
-  pal <- if (!is.null(dots$alpha)) {
-    function(n) apply_alpha(ct$palette(n), dots$alpha)
-  } else {
-    ct$palette
+  if (is.character(legend) && legend %in% c("top", "bottom", "left", "right")) {
+    opar <- graphics::par("mai")
+    on.exit(graphics::par(mai = opar), add = TRUE)
+    graphics::par(mai = adjust_legend_margin(legend, opar))
   }
 
-  pt_args <- NULL
+  dots <- cast_to_base_params(dots = list(...), defaults = list(), alpha.on = NULL)
+  pal <- ct$palette(256L)
+  if (!is.null(dots$alpha)) {
+    pal <- apply_alpha(pal, dots$alpha)
+  }
+
+  img_defaults <- list(
+    x = x, y = y, z = z, zlim = zlim, col = pal,
+    xlab = xlab %||% "", ylab = ylab %||% "", main = main, sub = sub,
+    axes = FALSE
+  )
+  img_allowed <- c(
+    "x", "y", "z", "col", "zlim", "xlim", "ylim",
+    "xlab", "ylab", "main", "sub", "axes", "useRaster"
+  )
+  img_args <- cast_to_base_params(
+    dots = dots, defaults = img_defaults, allowed = img_allowed, alpha.on = NULL
+  )
+  do.call(graphics::image.default, img_args)
+
+  graphics::box()
+  if (!is.null(xticks)) {
+    graphics::axis(1L, at = seq_along(xticks), labels = xticks)
+  } else {
+    graphics::axis(1L)
+  }
+  if (!is.null(yticks)) {
+    graphics::axis(2L, at = seq_along(yticks), labels = yticks)
+  } else {
+    graphics::axis(2L)
+  }
+
   if (!is.null(points) && nrow(points) > 0L) {
     pt_args <- cast_to_base_params(
       dots = dots,
@@ -373,66 +544,44 @@ draw_surface_base <- function(
       allowed = c("x", "y", "col", "pch", "cex", "bg"),
       alpha.on = "col"
     )
+    do.call(graphics::points.default, pt_args)
   }
 
-  plot_axes <- substitute({
-    graphics::title(main = "", xlab = "", ylab = "")
-    if (!is.null(xticks)) {
-      graphics::axis(1L, at = seq_along(xticks), labels = xticks)
-    } else {
-      graphics::axis(1L)
-    }
-    if (!is.null(yticks)) {
-      graphics::axis(2L, at = seq_along(yticks), labels = yticks)
-    } else {
-      graphics::axis(2L)
-    }
-    if (!is.null(pt_args)) {
-      do.call(graphics::points.default, pt_args)
-    }
-  })
-
-  fc_args <- list(
-    x = x, y = y, z = z, zlim = zlim,
-    xlab = dots$xlab %||% xlab,
-    ylab = dots$ylab %||% ylab,
-    main = dots$main %||% main,
-    color.palette = pal,
-    plot.axes = plot_axes,
-    las = graphics::par("las")
+  draw_base_legend(
+    values = as.vector(z), theme = use_theme, legend = legend, title = legend.title,
+    style = "fill", middle = middle, limits = zlim
   )
-  do.call(graphics::filled.contour, fc_args)
   invisible(NULL)
 }
 
-#' Base Graphics Matrix Heatmap
-#'
-#' @param z numeric matrix of values to plot.
-#' @param labels character vector of row/column labels.
-#' @param theme optional color theme name or \code{"colortheme"} object.
-#' @param main,sub,xlab,ylab optional plot titles and axis labels.
-#' @param ... additional graphical parameters.
-#'
-#' @return invisibly returns \code{NULL}.
-#' @export
-#'
 draw_matrix_base <- function(
-    z, labels = rownames(z), theme = NULL,
-    main = NULL, sub = NULL, xlab = "", ylab = "", ...
+    z, ticks = rownames(z), theme = NULL,
+    legend = FALSE, legend.title = NULL, middle = 0,
+    main = NULL, sub = NULL, xlab = NULL, ylab = NULL, ...
 ) {
   m <- nrow(z)
-  labels <- labels %||% as.character(seq_len(m))
+  ticks <- ticks %||% as.character(seq_len(m))
+
   opar <- graphics::par(c("mai", "las"))
   on.exit(graphics::par(opar), add = TRUE)
-  graphics::par(mai = adjust_left_margin(labels), las = 1L)
+  mai <- adjust_left_margin(ticks)
+  mai <- adjust_legend_margin(legend, mai)
+  graphics::par(mai = mai, las = 1L)
 
-  ct <- colortheme::colortheme(theme %||% getOption("colortheme.sequential", "grayscale"))
-  palette <- ct$palette(12L)
+  use_theme <- theme %||% getOption("colortheme.sequential", "grayscale")
+  ct <- colortheme::colortheme(use_theme)
+  palette <- ct$palette(256L)
+
+  zlim <- range(z, na.rm = TRUE)
+  if (ct$type == "diverging") {
+    zmax <- max(abs(zlim - middle))
+    zlim <- c(-zmax, zmax) + middle
+  }
 
   defaults <- list(
-    x = seq_len(m), y = seq_len(m), z = z,
+    x = seq_len(m), y = seq_len(m), z = z, zlim = zlim,
     fill = palette, col = NA, axes = FALSE,
-    main = main, sub = sub, xlab = xlab, ylab = ylab,
+    main = main, sub = sub, xlab = xlab %||% "", ylab = ylab %||% "",
     lty = 1L, lwd = 1L
   )
   args <- cast_to_base_params(dots = list(...), defaults = defaults, alpha.on = "fill")
@@ -444,8 +593,8 @@ draw_matrix_base <- function(
   do.call(graphics::image.default, args[names(args) %in% img_allowed])
 
   at <- seq_len(m + 2L) - 1L
-  graphics::axis(1L, at = at, labels = c("", labels, ""))
-  graphics::axis(2L, at = at, labels = c("", labels, ""))
+  graphics::axis(1L, at = at, labels = c("", ticks, ""))
+  graphics::axis(2L, at = at, labels = c("", ticks, ""))
   graphics::axis(3L, labels = FALSE, tick = TRUE, at = at, lwd.ticks = 0)
   graphics::axis(4L, labels = FALSE, tick = TRUE, at = at, lwd.ticks = 0)
   if (!is.na(grid_col)) {
@@ -454,38 +603,38 @@ draw_matrix_base <- function(
       col = grid_col, lty = args$lty, lwd = args$lwd
     )
   }
+
+  draw_base_legend(
+    values = as.vector(z), theme = use_theme, legend = legend, title = legend.title,
+    style = "fill", middle = middle, limits = zlim
+  )
   invisible(NULL)
 }
 
-#' Base Graphics Boxplots
-#'
-#' @param x A named list of numeric vectors (one per category).
-#' @param theme optional color theme name or \code{"colortheme"} object.
-#' @param theme.by optional vector (length \code{length(x)}) mapped to box fills via \code{theme}.
-#' @param horizontal Logical; if \code{TRUE}, boxes are drawn horizontally.
-#' @param main,sub,xlab,ylab optional plot titles and axis labels.
-#' @param ... Additional graphical parameters.
-#'
-#' @return Invisibly returns \code{NULL}.
-#' @export
 draw_boxes_base <- function(
-    x, theme = NULL, theme.by = NULL, horizontal = TRUE,
-    main = NULL, sub = NULL, xlab = "", ylab = NULL, ...
+    x, theme = NULL, theme.values = NULL,
+    legend = FALSE, legend.title = NULL, horizontal = TRUE,
+    main = NULL, sub = NULL, xlab = NULL, ylab = NULL, ...
 ) {
-  if (horizontal) {
-    opar <- graphics::par(c("mai", "las"))
-    on.exit(graphics::par(opar), add = TRUE)
-    graphics::par(mai = adjust_left_margin(names(x)), las = 1L)
-  }
+  x <- as.list(x)
+  keep <- vapply(x, function(v) is.numeric(v) || is.logical(v), logical(1L))
+  x <- lapply(x[keep], as.numeric)
   nms <- names(x) %||% as.character(seq_along(x))
-  theme_cols <- NULL
-  if (!is.null(theme)) {
-    cval <- theme.by %||% factor(nms, levels = nms)
-    theme_cols <- colortheme::map_to_colors(cval, theme = theme)
+  cval <- if (!is.null(theme)) (theme.values %||% factor(nms, levels = nms)) else NULL
+  if (horizontal) {
+    x <- rev(x)
+    if (!is.null(cval)) cval <- rev(cval)
   }
+  opar <- graphics::par(c("mai", "las"))
+  on.exit(graphics::par(opar), add = TRUE)
+  mai <- if (horizontal) adjust_left_margin(nms) else graphics::par("mai")
+  mai <- adjust_legend_margin(legend, mai)
+  graphics::par(mai = mai, las = if (horizontal) 1L else graphics::par("las"))
+  theme_cols <- if (!is.null(theme)) colortheme::map_to_colors(cval, theme = theme) else NULL
+
   defaults <- list(
     x = x, fill = theme_cols %||% NA, col = "black", pch = 16L,
-    main = main, sub = sub, xlab = xlab, ylab = ylab,
+    main = main, sub = sub, xlab = xlab %||% "", ylab = ylab %||% "",
     horizontal = horizontal
   )
   args <- cast_to_base_params(dots = list(...), defaults = defaults, alpha.on = "fill")
@@ -495,5 +644,12 @@ draw_boxes_base <- function(
   args$boxwex <- args$boxwex %||% args$width
   args$width <- NULL
   do.call(graphics::boxplot.default, args)
+
+  if (!is.null(theme)) {
+    draw_base_legend(
+      values = cval, theme = theme, legend = legend, title = legend.title,
+      style = "fill"
+    )
+  }
   invisible(NULL)
 }

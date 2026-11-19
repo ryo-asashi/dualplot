@@ -14,6 +14,7 @@
 \alias{layer_linepoint}
 \alias{layer_dotchart}
 \alias{layer_vline}
+\alias{layer_hline}
 \title{Low-Level Filtered ggplot2 Layer Constructors}
 \usage{
 layer_point(mapping = NULL, data = NULL, ...)
@@ -39,6 +40,8 @@ layer_linepoint(mapping = NULL, data = NULL, ...)
 layer_dotchart(mapping = NULL, data = NULL, ...)
 
 layer_vline(xintercept = 0, scale_lwd = 0.5, ...)
+
+layer_hline(yintercept = 0, scale_lwd = 0.5, ...)
 }
 \arguments{
 \item{mapping}{set of aesthetic mappings created by \code{ggplot2::aes()}.}
